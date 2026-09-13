@@ -1,0 +1,6 @@
+# Copy this to .dev.vars when setting up a separate machine.
+# This value is for local development only; production uses Cloudflare Secrets.
+AUTH_SECRET=replace-with-a-long-random-local-only-value
+# Optional: use OpenAI GPT-5 mini vision first, then let unresolved Australian
+# product labels use a web search lookup. Never commit the real value.
+OPENAI_API_KEY=

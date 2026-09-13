@@ -1,0 +1,20 @@
+# Local Netlify folder
+.netlify
+.dev.vars
+.wrangler
+
+# Dependencies and generated files
+node_modules/
+.pnpm-store/
+dist/
+
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# Local receipt-processing images
+.tmp-*
+
+# macOS metadata
+.DS_Store
