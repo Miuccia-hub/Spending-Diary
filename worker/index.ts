@@ -20,6 +20,27 @@ const MAX_SCAN_IMAGE_BYTES = 650_000;
 function json(body: unknown, status = 200, headers: HeadersInit = {}) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...headers } });
 }
+
+const EXCHANGE_CURRENCIES = new Set(["AUD", "USD", "GBP", "CNY"]);
+async function exchangeRate(request: Request) {
+  const url = new URL(request.url);
+  const base = String(url.searchParams.get("base") || "AUD").trim().toUpperCase();
+  const quote = String(url.searchParams.get("quote") || "CNY").trim().toUpperCase();
+  const requestedDate = String(url.searchParams.get("date") || "").trim();
+  if (!EXCHANGE_CURRENCIES.has(base) || quote !== "CNY") return json({ error: "暂不支持这个币种的人民币换算。" }, 422);
+  if (requestedDate && !/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) return json({ error: "汇率日期格式无效。" }, 422);
+  if (base === quote) return json({ base, quote, requestedDate: requestedDate || null, rateDate: requestedDate || now().slice(0, 10), rate: 1, source: "identity" }, 200, { "Cache-Control": "public, max-age=86400" });
+
+  const datePath = requestedDate || "latest";
+  const endpoint = `https://api.frankfurter.dev/v1/${datePath}?base=${encodeURIComponent(base)}&symbols=${encodeURIComponent(quote)}`;
+  const response = await fetch(endpoint, { headers: { Accept: "application/json" }, cf: { cacheEverything: true, cacheTtl: requestedDate ? 31_536_000 : 3_600 } });
+  if (!response.ok) throw new Error(`汇率服务返回 ${response.status}`);
+  const result = await response.json<any>();
+  const rate = Number(result?.rates?.[quote]);
+  const rateDate = String(result?.date || "");
+  if (!Number.isFinite(rate) || rate <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(rateDate)) throw new Error("汇率服务未返回有效结果");
+  return json({ base, quote, requestedDate: requestedDate || null, rateDate, rate, source: "Frankfurter daily reference rate" }, 200, { "Cache-Control": requestedDate ? "public, max-age=31536000, immutable" : "public, max-age=3600" });
+}
 function now() { return new Date().toISOString(); }
 function bytesToBase64(bytes: Uint8Array) {
   // Spreading a full receipt image into fromCharCode can exceed the Worker
@@ -410,6 +431,7 @@ function receiptNameEnrichmentInput(value: any) {
 }
 
 async function handleApi(request: Request, env: Env, path: string) {
+  if (path === "/api/exchange-rate" && request.method === "GET") { try { return await exchangeRate(request); } catch (error) { console.error("Exchange rate lookup failed", error); return json({ error: "暂时无法取得交易日汇率，请稍后重试。" }, 502); } }
   if (path === "/api/auth/me" && request.method === "GET") { const user = await currentUser(request, env); return json({ user: user ? publicUser(user) : null }); }
   if (path === "/api/auth/signup" && request.method === "POST") {
     const value = await body(request); const account = normalizeIdentifier(value.identifier); const password = String(value.password || ""); const fullName = String(value.full_name || "").trim() || account.identifier.split("@")[0];
